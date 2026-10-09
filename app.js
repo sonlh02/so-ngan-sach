@@ -2,6 +2,10 @@
   'use strict';
 
   const KEY = 'so-ngan-sach:v1';
+  const DAY = 864e5;
+  const REMIND_FIRST = 3 * DAY;  // chưa sao lưu lần nào: nhắc sau 3 ngày dùng
+  const REMIND_EVERY = 14 * DAY; // đã từng sao lưu: nhắc lại sau 14 ngày nếu có thay đổi
+  const SNOOZE = 3 * DAY;
   const GROUPS = {
     need: { label: 'Thiết yếu', target: 50, color: 'var(--need)' },
     want: { label: 'Mong muốn', target: 30, color: 'var(--want)' },
@@ -44,6 +48,7 @@
   // ---------- State ----------
   let state = load();
   let filter = '';
+  let editing = null; // id khoản chi đang sửa trong form
 
   function load() {
     try {
@@ -112,6 +117,23 @@
       return s.income > 0 || s.planned > 0;
     });
   }
+  // Trả về lời nhắc sao lưu, hoặc null nếu chưa cần nhắc
+  function backupNotice() {
+    const now = Date.now();
+    const last = state.lastBackup || 0;
+    if (!(state.lastChange > last) || now < (state.snoozeUntil || 0)) return null;
+    if (!last) return now - state.firstChange > REMIND_FIRST ? 'Sổ chưa được sao lưu lần nào — dữ liệu chỉ nằm trên máy này.' : null;
+    return now - last > REMIND_EVERY ? `Lần sao lưu gần nhất cách đây ${Math.floor((now - last) / DAY)} ngày.` : null;
+  }
+  function renderBackup() {
+    const note = backupNotice();
+    $('backup-note').hidden = !note;
+    $('backup-note').innerHTML = note ? `<span>${note}</span><span class="backup-actions">
+      <button type="button" class="ink-btn" data-act="export">Sao lưu ngay</button>
+      <button type="button" class="link" data-act="snooze">Để sau</button></span>` : '';
+    const d = state.lastBackup && new Date(state.lastBackup);
+    $('backup-status').textContent = d ? `Sao lưu gần nhất: ${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}.` : 'Chưa sao lưu lần nào.';
+  }
   const monthName = (key) => { const [y, m] = key.split('-'); return `Tháng ${+m}/${y}`; };
 
   // ---------- Render ----------
@@ -120,6 +142,7 @@
     const st = stats(m);
     const ti = timeInfo(state.view);
     renderHead();
+    renderBackup();
     renderSummary(st, ti);
     renderPlan(m, st, ti);
     renderCatOptions(m);
@@ -266,8 +289,8 @@
           h += `<div class="day-head"><span>${label[0].toUpperCase() + label.slice(1)}, ${pad(d)}/${pad(mo)}</span><span class="num">${num(total)}</span></div>`;
         }
         const cat = names[t.catId] || 'Chưa phân loại';
-        h += `<div class="tx"><div class="tx-main"><div class="tx-note">${esc(t.note || cat)}</div>
-          ${t.note ? `<div class="tx-cat">${esc(cat)}</div>` : ''}</div>
+        h += `<div class="tx${t.id === editing ? ' is-editing' : ''}"><button type="button" class="tx-main" data-act="edit-tx" data-id="${t.id}" title="Sửa khoản chi này"><span class="tx-note">${esc(t.note || cat)}</span>
+          ${t.note ? `<span class="tx-cat">${esc(cat)}</span>` : ''}</button>
           <span class="num">${num(t.amount)}</span>
           <button type="button" class="del" data-act="del-tx" data-id="${t.id}" aria-label="Xoá khoản chi">×</button></div>`;
       }
@@ -275,9 +298,27 @@
     $('txlist').innerHTML = h;
   }
 
+  // Đưa form về chế độ sửa khoản chi t, hoặc về chế độ ghi mới khi t rỗng
+  function setEditing(t) {
+    if (!t && editing) $('tx-date').value = ''; // để renderHead đặt lại ngày mặc định
+    editing = t ? t.id : null;
+    $('tx-form').classList.toggle('is-editing', !!t);
+    $('tx-submit').textContent = t ? 'Lưu thay đổi' : 'Ghi sổ';
+    $('tx-cancel').hidden = !t;
+    $('tx-amount').value = t ? num(t.amount) : '';
+    $('tx-amount').classList.remove('invalid');
+    $('tx-note').value = t ? t.note : '';
+    if (t) { $('tx-date').value = t.date; $('tx-cat').value = t.catId; }
+  }
+
   // Lưu rồi vẽ lại; giữ con trỏ ở ô đang gõ (Tab sang ô kế tiếp không bị mất focus)
-  function commit(focusFid) {
+  function commit(focusFid, navOnly) {
     applySmart(cur());
+    if (!navOnly) {
+      state.lastChange = Date.now();
+      state.firstChange ||= state.lastChange;
+      navigator.storage?.persist?.().catch(() => {}); // xin trình duyệt đừng tự dọn dữ liệu của app
+    }
     save();
     setTimeout(() => {
       const fid = focusFid || document.activeElement?.dataset?.fid;
@@ -296,9 +337,17 @@
   };
 
   const actions = {
-    prev() { shiftMonth(-1); commit(); },
-    next() { shiftMonth(1); commit(); },
-    today() { state.view = keyOf(new Date()); commit(); },
+    prev() { setEditing(null); shiftMonth(-1); commit(null, true); },
+    next() { setEditing(null); shiftMonth(1); commit(null, true); },
+    today() { setEditing(null); state.view = keyOf(new Date()); commit(null, true); },
+    snooze() { state.snoozeUntil = Date.now() + SNOOZE; save(); renderBackup(); },
+    'edit-tx'(el) {
+      setEditing(cur().transactions.find((t) => t.id === el.dataset.id));
+      renderTx(cur());
+      $('tx-form').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      $('tx-amount').focus();
+    },
+    'cancel-edit'() { setEditing(null); render(); },
     'add-inc'() {
       const item = { id: uid(), name: 'Nguồn thu mới', amount: 0 };
       cur().incomes.push(item);
@@ -325,6 +374,7 @@
     },
     'del-tx'(el) {
       const m = cur();
+      if (el.dataset.id === editing) setEditing(null);
       m.transactions = m.transactions.filter((t) => t.id !== el.dataset.id);
       commit();
     },
@@ -343,13 +393,29 @@
       m.pctInit = src.pctInit;
       commit();
     },
-    export() {
-      const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `so-ngan-sach-${isoOf(new Date())}.json`;
-      a.click();
-      URL.revokeObjectURL(a.href);
+    async export() {
+      const text = JSON.stringify(state, null, 2);
+      const name = `so-ngan-sach-${isoOf(new Date())}`;
+      // Trên điện thoại: mở bảng chia sẻ để lưu vào Tệp / Drive / gửi cho chính mình. Không được thì tải tệp về.
+      const shareable = matchMedia('(pointer: coarse)').matches && [
+        new File([text], `${name}.json`, { type: 'application/json' }),
+        new File([text], `${name}.txt`, { type: 'text/plain' }),
+      ].find((f) => navigator.canShare?.({ files: [f] }));
+      let shared = false;
+      if (shareable) {
+        try { await navigator.share({ files: [shareable], title: 'Sao lưu Sổ ngân sách' }); shared = true; }
+        catch (err) { if (err.name === 'AbortError') return; }
+      }
+      if (!shared) {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+        a.download = `${name}.json`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+      }
+      state.lastBackup = Date.now();
+      save();
+      renderBackup();
     },
     import() { $('import-file').click(); },
   };
@@ -405,13 +471,11 @@
       amt.focus();
       return;
     }
-    cur().transactions.push({
-      id: uid(), at: Date.now(), date: $('tx-date').value, catId: $('tx-cat').value,
-      note: $('tx-note').value.trim(), amount,
-    });
-    amt.value = '';
-    $('tx-note').value = '';
-    amt.classList.remove('invalid');
+    const data = { date: $('tx-date').value, catId: $('tx-cat').value, note: $('tx-note').value.trim(), amount };
+    const old = cur().transactions.find((t) => t.id === editing);
+    if (old) Object.assign(old, data);
+    else cur().transactions.push({ id: uid(), at: Date.now(), ...data });
+    setEditing(null);
     commit();
     amt.focus();
   });
@@ -424,8 +488,8 @@
       const data = JSON.parse(text);
       if (!data || typeof data.months !== 'object') throw new Error('format');
       if (!confirm('Thay toàn bộ dữ liệu hiện tại bằng dữ liệu trong tệp này?')) return;
-      state = { view: data.view || keyOf(new Date()), months: data.months };
-      commit();
+      state = { view: data.view || keyOf(new Date()), months: data.months, lastBackup: Date.now() }; // vừa khớp với tệp sao lưu
+      commit(null, true);
     }).catch(() => alert('Tệp không đúng định dạng của Sổ ngân sách.'));
   }
 

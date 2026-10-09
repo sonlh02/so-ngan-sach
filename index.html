@@ -32,6 +32,8 @@
       </nav>
     </header>
 
+    <div class="backup-note" id="backup-note" role="status" hidden></div>
+
     <section class="summary" id="summary" aria-label="Tổng quan"></section>
 
     <main class="book">
@@ -46,25 +48,26 @@
       <section class="page page-log">
         <header class="page-head">
           <h2>Nhật ký chi tiêu</h2>
-          <span class="page-note">Gõ nhanh: 50k, 1.5tr</span>
+          <span class="page-note">Gõ nhanh: 50k, 1.5tr · chạm một khoản để sửa</span>
         </header>
         <form id="tx-form" class="tx-form" autocomplete="off">
           <label class="f f-date"><span>Ngày</span><input type="date" id="tx-date" required></label>
           <label class="f f-amt"><span>Số tiền</span><input type="text" id="tx-amount" inputmode="decimal" placeholder="0" required></label>
           <label class="f f-cat"><span>Hạng mục</span><select id="tx-cat"></select></label>
           <label class="f f-note"><span>Ghi chú</span><input type="text" id="tx-note" maxlength="80" placeholder="Mua gì, ở đâu…"></label>
-          <button type="submit" class="ink-btn">Ghi sổ</button>
+          <button type="submit" class="ink-btn" id="tx-submit">Ghi sổ</button>
+          <button type="button" class="link" id="tx-cancel" data-act="cancel-edit" hidden>Huỷ sửa</button>
         </form>
         <div id="txlist"></div>
       </section>
     </main>
 
     <footer class="foot">
-      <span>Dữ liệu được lưu trên trình duyệt của máy này.</span>
+      <span>Dữ liệu được lưu trên trình duyệt của máy này. <span id="backup-status"></span></span>
       <span class="foot-actions">
-        <button type="button" data-act="export">Xuất dữ liệu</button>
-        <button type="button" data-act="import">Nhập dữ liệu</button>
-        <input type="file" id="import-file" accept="application/json,.json" hidden>
+        <button type="button" data-act="export">Sao lưu</button>
+        <button type="button" data-act="import">Khôi phục</button>
+        <input type="file" id="import-file" accept="application/json,text/plain,.json,.txt" hidden>
       </span>
     </footer>
   </div>
