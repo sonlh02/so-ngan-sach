@@ -1,0 +1,9 @@
+{
+  "name": "so-ngan-sach",
+  "version": "1.0.0",
+  "description": "Sổ ngân sách tháng — lập kế hoạch và theo dõi chi tiêu",
+  "private": true,
+  "scripts": {
+    "start": "node server.js"
+  }
+}

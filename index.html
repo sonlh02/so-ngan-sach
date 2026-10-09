@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+  <title>Sổ ngân sách tháng</title>
+  <meta name="theme-color" content="#231e1a">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Sổ ngân sách">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600&family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,400;1,9..144,600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="desk">
+    <header class="mast">
+      <div class="brand">
+        <span class="brand-kicker">Sổ tay cá nhân</span>
+        <h1>Sổ ngân sách</h1>
+      </div>
+      <nav class="month-nav" aria-label="Chọn tháng">
+        <button type="button" class="nav-btn" data-act="prev" aria-label="Tháng trước">‹</button>
+        <div class="month-label" id="month-label"></div>
+        <button type="button" class="nav-btn" data-act="next" aria-label="Tháng sau">›</button>
+        <button type="button" class="today-btn" data-act="today">Tháng này</button>
+      </nav>
+    </header>
+
+    <section class="summary" id="summary" aria-label="Tổng quan"></section>
+
+    <main class="book">
+      <section class="page page-plan">
+        <header class="page-head">
+          <h2>Kế hoạch</h2>
+          <span class="page-note">Chia thu nhập vào từng hạng mục trước khi tiêu</span>
+        </header>
+        <div id="plan"></div>
+      </section>
+
+      <section class="page page-log">
+        <header class="page-head">
+          <h2>Nhật ký chi tiêu</h2>
+          <span class="page-note">Gõ nhanh: 50k, 1.5tr</span>
+        </header>
+        <form id="tx-form" class="tx-form" autocomplete="off">
+          <label class="f f-date"><span>Ngày</span><input type="date" id="tx-date" required></label>
+          <label class="f f-amt"><span>Số tiền</span><input type="text" id="tx-amount" inputmode="decimal" placeholder="0" required></label>
+          <label class="f f-cat"><span>Hạng mục</span><select id="tx-cat"></select></label>
+          <label class="f f-note"><span>Ghi chú</span><input type="text" id="tx-note" maxlength="80" placeholder="Mua gì, ở đâu…"></label>
+          <button type="submit" class="ink-btn">Ghi sổ</button>
+        </form>
+        <div id="txlist"></div>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <span>Dữ liệu được lưu trên trình duyệt của máy này.</span>
+      <span class="foot-actions">
+        <button type="button" data-act="export">Xuất dữ liệu</button>
+        <button type="button" data-act="import">Nhập dữ liệu</button>
+        <input type="file" id="import-file" accept="application/json,.json" hidden>
+      </span>
+    </footer>
+  </div>
+  <script src="app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  </script>
+</body>
+</html>
