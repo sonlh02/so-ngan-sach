@@ -48,12 +48,13 @@
   // ---------- State ----------
   let state = load();
   let filter = '';
+  let recOpen = false;
   let editing = null; // id khoản chi đang sửa trong form
 
   function load() {
     try {
       const s = JSON.parse(localStorage.getItem(KEY));
-      if (s && s.months) return s;
+      if (s && s.months) return { ...s, view: keyOf(new Date()) }; // mở app luôn ở tháng hiện tại
     } catch { /* dữ liệu hỏng → bắt đầu sổ mới */ }
     return { view: keyOf(new Date()), months: {} };
   }
@@ -86,6 +87,20 @@
       for (const c of cats) out[c.id] = (GROUPS[g].target * (known ? SUGGEST[c.name] : 1)) / total;
     }
     return out;
+  }
+  // Giữ tổng = 100%: mục "Cố định" và mục vừa sửa (keepId) đứng yên, các mục còn lại co giãn theo tỉ lệ đang có
+  function rebalance(m, keepId) {
+    const keep = m.categories.find((c) => c.id === keepId);
+    const free = m.categories.filter((c) => !c.locked && c !== keep);
+    const lockedSum = sum(m.categories.filter((c) => c.locked), 'pct');
+    if (keep) keep.pct = Math.min(keep.pct, Math.max(0, 100 - lockedSum));
+    if (!free.length) return;
+    const room = Math.max(0, 100 - lockedSum - (keep ? keep.pct : 0));
+    const before = sum(free, 'pct');
+    for (const c of free) c.pct = Math.round((before > 0 ? (c.pct || 0) / before : 1 / free.length) * room * 10) / 10;
+    // phần lẻ do làm tròn dồn vào mục lớn nhất
+    const big = free.reduce((a, b) => (b.pct > a.pct ? b : a));
+    big.pct = Math.max(0, Math.round((big.pct + room - sum(free, 'pct')) * 1e6) / 1e6);
   }
   function enableSmart(m) {
     const st = stats(m);
@@ -137,7 +152,47 @@
   const monthName = (key) => { const [y, m] = key.split('-'); return `Tháng ${+m}/${y}`; };
 
   // ---------- Render ----------
+  // Khoản cố định hằng tháng: mỗi quy tắc tự ghi đúng một lần vào tháng hiện tại, lần đầu mở app trong tháng đó.
+  // Quy tắc nhớ hạng mục theo tên vì mỗi tháng có bộ id hạng mục riêng.
+  function applyRecurring() {
+    const rules = state.recurring || [];
+    if (!rules.length) return;
+    const key = keyOf(new Date());
+    const m = (state.months[key] ||= blankMonth());
+    const done = (m.recDone ||= []);
+    const todo = rules.filter((r) => !done.includes(r.id));
+    if (!todo.length) return;
+    const { dim } = timeInfo(key);
+    for (const r of todo) {
+      done.push(r.id);
+      m.transactions.push({
+        id: uid(), at: Date.now(), date: `${key}-${pad(Math.min(r.day, dim))}`,
+        catId: m.categories.find((c) => c.name === r.cat)?.id || '', note: r.note, amount: r.amount, recId: r.id,
+      });
+    }
+    state.lastChange = Date.now();
+    save();
+  }
+
+  function renderRecurring() {
+    const rules = state.recurring || [];
+    let h = '';
+    if (rules.length) {
+      h = `<details class="rec"${recOpen ? ' open' : ''}><summary>Khoản cố định hằng tháng <span class="num">${rules.length} khoản · ${money(sum(rules, 'amount'))}</span></summary>`;
+      for (const r of rules) {
+        h += `<div class="tx"><span class="tx-main"><span class="tx-note">${esc(r.note || r.cat || 'Khoản chi')}</span>
+          <span class="tx-cat">${esc(r.cat || 'Chưa phân loại')} · ngày ${r.day} hằng tháng</span></span>
+          ${cell('rec', r.id, 'amount', num(r.amount), true)}
+          <button type="button" class="del" data-act="del-rec" data-id="${r.id}" aria-label="Bỏ khoản cố định">×</button></div>`;
+      }
+      h += `<p class="rec-hint">Đổi số tiền hoặc bỏ một khoản chỉ ảnh hưởng từ tháng sau; khoản đã ghi trong sổ giữ nguyên.</p></details>`;
+    }
+    $('recurring').innerHTML = h;
+  }
+
   function render() {
+    applyRecurring();
+    renderRecurring();
     const m = cur();
     const st = stats(m);
     const ti = timeInfo(state.view);
@@ -181,7 +236,7 @@
   function renderPlan(m, st, ti) {
     let h = '';
     const prev = prevPlanKey();
-    if (prev && st.income === 0 && st.planned === 0 && !m.transactions.length) {
+    if (prev && st.income === 0 && st.planned === 0 && !m.transactions.some((t) => !t.recId)) {
       h += `<div class="banner"><span>Tháng này chưa có kế hoạch.</span>
         <button type="button" class="ink-btn" data-act="copy-prev">Chép từ ${monthName(prev)}</button></div>`;
     }
@@ -290,7 +345,7 @@
         }
         const cat = names[t.catId] || 'Chưa phân loại';
         h += `<div class="tx${t.id === editing ? ' is-editing' : ''}"><button type="button" class="tx-main" data-act="edit-tx" data-id="${t.id}" title="Sửa khoản chi này"><span class="tx-note">${esc(t.note || cat)}</span>
-          ${t.note ? `<span class="tx-cat">${esc(cat)}</span>` : ''}</button>
+          ${t.note || t.recId ? `<span class="tx-cat">${[t.recId && '↻ hằng tháng', t.note && esc(cat)].filter(Boolean).join(' · ')}</span>` : ''}</button>
           <span class="num">${num(t.amount)}</span>
           <button type="button" class="del" data-act="del-tx" data-id="${t.id}" aria-label="Xoá khoản chi">×</button></div>`;
       }
@@ -305,6 +360,8 @@
     $('tx-form').classList.toggle('is-editing', !!t);
     $('tx-submit').textContent = t ? 'Lưu thay đổi' : 'Ghi sổ';
     $('tx-cancel').hidden = !t;
+    $('tx-repeat').checked = false;
+    $('tx-repeat').parentElement.hidden = !!(t && (state.recurring || []).some((r) => r.id === t.recId)); // đã là khoản cố định
     $('tx-amount').value = t ? num(t.amount) : '';
     $('tx-amount').classList.remove('invalid');
     $('tx-note').value = t ? t.note : '';
@@ -370,6 +427,7 @@
       if (used.length && !confirm(`"${c.name}" đang có ${used.length} khoản chi. Xoá hạng mục và chuyển các khoản này sang "Chưa phân loại"?`)) return;
       used.forEach((t) => { t.catId = ''; });
       m.categories = m.categories.filter((x) => x.id !== c.id);
+      if (m.smart) rebalance(m);
       commit();
     },
     'del-tx'(el) {
@@ -382,13 +440,23 @@
       const m = cur();
       const sug = suggestPcts(m);
       for (const c of m.categories) if (!c.locked) c.pct = sug[c.id];
+      rebalance(m);
+      commit();
+    },
+    'del-rec'(el) {
+      state.recurring = state.recurring.filter((r) => r.id !== el.dataset.id);
       commit();
     },
     'copy-prev'() {
       const src = state.months[prevPlanKey()];
       const m = cur();
       m.incomes = src.incomes.map((i) => ({ ...i, id: uid() }));
+      const oldName = Object.fromEntries(m.categories.map((c) => [c.id, c.name]));
       m.categories = src.categories.map((c) => ({ ...c, id: uid() }));
+      for (const t of m.transactions) { // khoản cố định đã tự ghi: nối lại hạng mục theo tên
+        const name = (state.recurring || []).find((r) => r.id === t.recId)?.cat ?? oldName[t.catId];
+        t.catId = m.categories.find((c) => c.name === name)?.id || '';
+      }
       m.smart = src.smart;
       m.pctInit = src.pctInit;
       commit();
@@ -439,22 +507,29 @@
       return commit();
     }
     if (!el.dataset.field) return;
-    const item = (el.dataset.kind === 'inc' ? m.incomes : m.categories).find((x) => x.id === el.dataset.id);
+    const list = { inc: m.incomes, cat: m.categories, rec: state.recurring }[el.dataset.kind];
+    const item = list.find((x) => x.id === el.dataset.id);
     if (!item) return;
     if (el.dataset.field === 'name') {
-      item.name = el.value.trim() || item.name;
+      const name = el.value.trim() || item.name;
+      if (el.dataset.kind === 'cat') for (const r of state.recurring || []) if (r.cat === item.name) r.cat = name;
+      item.name = name;
     } else if (el.dataset.field === 'pct') {
       const v = parseFloat(el.value.replace('%', '').replace(',', '.'));
-      if (v >= 0) item.pct = Math.min(100, v);
+      if (v >= 0) { item.pct = Math.min(100, v); rebalance(m, item.id); }
     } else {
       const v = parseMoney(el.value || '0');
       const income = sum(m.incomes, 'amount');
       if (isNaN(v)) { /* giữ giá trị cũ */ }
-      else if (m.smart && el.dataset.kind === 'cat') item.pct = (v / income) * 100; // sửa số tiền → quy ngược ra %
+      else if (m.smart && el.dataset.kind === 'cat') { item.pct = (v / income) * 100; rebalance(m, item.id); } // sửa số tiền → quy ngược ra %
       else item[el.dataset.field] = v;
     }
     commit();
   });
+
+  document.addEventListener('toggle', (e) => {
+    if (e.target.classList?.contains('rec')) recOpen = e.target.open;
+  }, true);
 
   document.addEventListener('focusin', (e) => {
     if (e.target.classList.contains('cell')) e.target.select();
@@ -472,9 +547,17 @@
       return;
     }
     const data = { date: $('tx-date').value, catId: $('tx-cat').value, note: $('tx-note').value.trim(), amount };
-    const old = cur().transactions.find((t) => t.id === editing);
+    const m = cur();
+    if ($('tx-repeat').checked) {
+      const rule = { id: uid(), note: data.note, amount, cat: m.categories.find((c) => c.id === data.catId)?.name || '', day: +data.date.slice(8) };
+      (state.recurring ||= []).push(rule);
+      (m.recDone ||= []).push(rule.id); // khoản đang ghi chính là lần của tháng này
+      data.recId = rule.id;
+      recOpen = true;
+    }
+    const old = m.transactions.find((t) => t.id === editing);
     if (old) Object.assign(old, data);
-    else cur().transactions.push({ id: uid(), at: Date.now(), ...data });
+    else m.transactions.push({ id: uid(), at: Date.now(), ...data });
     setEditing(null);
     commit();
     amt.focus();
@@ -488,7 +571,7 @@
       const data = JSON.parse(text);
       if (!data || typeof data.months !== 'object') throw new Error('format');
       if (!confirm('Thay toàn bộ dữ liệu hiện tại bằng dữ liệu trong tệp này?')) return;
-      state = { view: data.view || keyOf(new Date()), months: data.months, lastBackup: Date.now() }; // vừa khớp với tệp sao lưu
+      state = { view: keyOf(new Date()), months: data.months, recurring: data.recurring || [], lastBackup: Date.now() }; // vừa khớp với tệp sao lưu
       commit(null, true);
     }).catch(() => alert('Tệp không đúng định dạng của Sổ ngân sách.'));
   }

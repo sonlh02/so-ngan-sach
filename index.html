@@ -56,8 +56,10 @@
           <label class="f f-cat"><span>Hạng mục</span><select id="tx-cat"></select></label>
           <label class="f f-note"><span>Ghi chú</span><input type="text" id="tx-note" maxlength="80" placeholder="Mua gì, ở đâu…"></label>
           <button type="submit" class="ink-btn" id="tx-submit">Ghi sổ</button>
+          <label class="repeat"><input type="checkbox" id="tx-repeat"> Lặp lại hằng tháng</label>
           <button type="button" class="link" id="tx-cancel" data-act="cancel-edit" hidden>Huỷ sửa</button>
         </form>
+        <div id="recurring"></div>
         <div id="txlist"></div>
       </section>
     </main>
