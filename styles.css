@@ -167,6 +167,7 @@ button { cursor: pointer; }
 .smart label { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; cursor: pointer; }
 .smart input, .lock input { width: 15px; height: 15px; margin: 0; accent-color: var(--ink); cursor: pointer; }
 .block-meta b.neg { color: var(--red); }
+.link { padding: 0; border: 0; background: transparent; color: var(--corner); text-decoration: underline; text-underline-offset: 3px; }
 .smart-line { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
 .smart-line .bar { flex: 1; margin-top: 0; }
 .pct { display: inline-flex; align-items: center; font-family: var(--mono); font-size: 12px; }

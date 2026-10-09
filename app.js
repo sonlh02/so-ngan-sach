@@ -8,10 +8,12 @@
     save: { label: 'Tiết kiệm', target: 20, color: 'var(--save)' },
   };
   const DEFAULT_CATS = [
-    ['Nhà ở & hoá đơn', 'need', 25], ['Ăn uống', 'need', 15], ['Đi lại', 'need', 5], ['Sức khoẻ', 'need', 5],
+    ['Nhà ở & hoá đơn', 'need', 20], ['Ăn uống', 'need', 20], ['Đi lại', 'need', 5], ['Sức khoẻ', 'need', 5],
     ['Mua sắm', 'want', 15], ['Giải trí', 'want', 15],
     ['Tiết kiệm', 'save', 20],
   ];
+  // % thu nhập gợi ý cho từng hạng mục mặc định (khung 50/30/20, chỉnh theo cơ cấu chi tiêu ở Việt Nam)
+  const SUGGEST = Object.fromEntries(DEFAULT_CATS.map(([name, , pct]) => [name, pct]));
 
   const $ = (id) => document.getElementById(id);
   const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -56,7 +58,7 @@
   function blankMonth() {
     return {
       incomes: [{ id: uid(), name: 'Lương', amount: 0 }],
-      categories: DEFAULT_CATS.map(([name, group, pct]) => ({ id: uid(), name, group, planned: 0, pct })),
+      categories: DEFAULT_CATS.map(([name, group]) => ({ id: uid(), name, group, planned: 0 })),
       transactions: [],
     };
   }
@@ -69,13 +71,26 @@
     const income = sum(m.incomes, 'amount');
     for (const c of m.categories) c.planned = Math.round((income * (c.pct || 0)) / 100);
   }
+  // Mỗi nhóm luôn đúng mục tiêu 50/30/20; trong nhóm chia theo SUGGEST, có hạng mục lạ thì chia đều
+  function suggestPcts(m) {
+    const out = {};
+    for (const g in GROUPS) {
+      const cats = m.categories.filter((c) => c.group === g);
+      const known = cats.every((c) => SUGGEST[c.name]);
+      const total = known ? cats.reduce((t, c) => t + SUGGEST[c.name], 0) : cats.length;
+      for (const c of cats) out[c.id] = (GROUPS[g].target * (known ? SUGGEST[c.name] : 1)) / total;
+    }
+    return out;
+  }
   function enableSmart(m) {
     const st = stats(m);
-    const derive = st.planned > 0 && st.income > 0; // giữ nguyên kế hoạch đang có
-    for (const c of m.categories) {
-      if (derive) c.pct = (c.planned / st.income) * 100;
-      else c.pct ??= GROUPS[c.group].target / m.categories.filter((x) => x.group === c.group).length;
+    if (st.planned > 0 && st.income > 0) { // giữ nguyên kế hoạch đang có
+      for (const c of m.categories) c.pct = (c.planned / st.income) * 100;
+    } else if (!m.pctInit) {
+      const sug = suggestPcts(m);
+      for (const c of m.categories) c.pct = sug[c.id];
     }
+    m.pctInit = true;
     m.smart = true;
   }
   function stats(m) {
@@ -160,7 +175,7 @@
     const pctTotal = sum(m.categories, 'pct');
     h += `<div class="smart"><label><input type="checkbox" id="smart-toggle"${m.smart ? ' checked' : ''}> Chi tiêu thông minh</label>
       <span class="block-meta">${m.smart
-        ? `đã chia <b class="${pctTotal > 100.05 ? 'neg' : ''}">${pf.format(pctTotal)}%</b> thu nhập`
+        ? `đã chia <b class="${pctTotal > 100.05 ? 'neg' : ''}">${pf.format(pctTotal)}%</b> thu nhập · <button type="button" class="link" data-act="suggest">Dùng % gợi ý</button>`
         : 'tự chia thu nhập theo % cho từng hạng mục'}</span></div>`;
 
     // Tỉ lệ 50/30/20 theo thu nhập
@@ -313,12 +328,19 @@
       m.transactions = m.transactions.filter((t) => t.id !== el.dataset.id);
       commit();
     },
+    suggest() {
+      const m = cur();
+      const sug = suggestPcts(m);
+      for (const c of m.categories) if (!c.locked) c.pct = sug[c.id];
+      commit();
+    },
     'copy-prev'() {
       const src = state.months[prevPlanKey()];
       const m = cur();
       m.incomes = src.incomes.map((i) => ({ ...i, id: uid() }));
       m.categories = src.categories.map((c) => ({ ...c, id: uid() }));
       m.smart = src.smart;
+      m.pctInit = src.pctInit;
       commit();
     },
     export() {
