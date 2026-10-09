@@ -8,9 +8,9 @@
     save: { label: 'Tiết kiệm', target: 20, color: 'var(--save)' },
   };
   const DEFAULT_CATS = [
-    ['Nhà ở & hoá đơn', 'need'], ['Ăn uống', 'need'], ['Đi lại', 'need'], ['Sức khoẻ', 'need'],
-    ['Mua sắm', 'want'], ['Giải trí', 'want'],
-    ['Tiết kiệm', 'save'],
+    ['Nhà ở & hoá đơn', 'need', 25], ['Ăn uống', 'need', 15], ['Đi lại', 'need', 5], ['Sức khoẻ', 'need', 5],
+    ['Mua sắm', 'want', 15], ['Giải trí', 'want', 15],
+    ['Tiết kiệm', 'save', 20],
   ];
 
   const $ = (id) => document.getElementById(id);
@@ -22,6 +22,7 @@
   const nf = new Intl.NumberFormat('vi-VN');
   const num = (n) => nf.format(Math.round(n));
   const money = (n) => `${num(n)} ₫`;
+  const pf = new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 1 });
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
   // "50k" → 50.000, "1.5tr" / "1,5tr" → 1.500.000, "1.200.000" → 1.200.000
@@ -55,12 +56,27 @@
   function blankMonth() {
     return {
       incomes: [{ id: uid(), name: 'Lương', amount: 0 }],
-      categories: DEFAULT_CATS.map(([name, group]) => ({ id: uid(), name, group, planned: 0 })),
+      categories: DEFAULT_CATS.map(([name, group, pct]) => ({ id: uid(), name, group, planned: 0, pct })),
       transactions: [],
     };
   }
   function cur() {
     return (state.months[state.view] ||= blankMonth());
+  }
+  // Chi tiêu thông minh: ngân sách mỗi hạng mục = thu nhập × % của hạng mục đó
+  function applySmart(m) {
+    if (!m.smart) return;
+    const income = sum(m.incomes, 'amount');
+    for (const c of m.categories) c.planned = Math.round((income * (c.pct || 0)) / 100);
+  }
+  function enableSmart(m) {
+    const st = stats(m);
+    const derive = st.planned > 0 && st.income > 0; // giữ nguyên kế hoạch đang có
+    for (const c of m.categories) {
+      if (derive) c.pct = (c.planned / st.income) * 100;
+      else c.pct ??= GROUPS[c.group].target / m.categories.filter((x) => x.group === c.group).length;
+    }
+    m.smart = true;
   }
   function stats(m) {
     const spentBy = {};
@@ -141,6 +157,12 @@
     }
     h += `<button type="button" class="add" data-act="add-inc">+ Thêm nguồn thu</button></div>`;
 
+    const pctTotal = sum(m.categories, 'pct');
+    h += `<div class="smart"><label><input type="checkbox" id="smart-toggle"${m.smart ? ' checked' : ''}> Chi tiêu thông minh</label>
+      <span class="block-meta">${m.smart
+        ? `đã chia <b class="${pctTotal > 100.05 ? 'neg' : ''}">${pf.format(pctTotal)}%</b> thu nhập`
+        : 'tự chia thu nhập theo % cho từng hạng mục'}</span></div>`;
+
     // Tỉ lệ 50/30/20 theo thu nhập
     const byGroup = {};
     for (const g in GROUPS) byGroup[g] = sum(m.categories.filter((c) => c.group === g), 'planned');
@@ -167,11 +189,13 @@
         const ratio = c.planned > 0 ? spent / c.planned : spent > 0 ? 1.01 : 0;
         const barCls = ratio > 1 ? 'over' : ti.when === 'now' && ratio > ti.elapsed + 0.1 ? 'warn' : '';
         h += `<div class="line"><div class="row">
-          ${cell('cat', c.id, 'name', c.name)}${cell('cat', c.id, 'planned', num(c.planned), true)}
+          ${cell('cat', c.id, 'name', c.name)}${cell('cat', c.id, 'planned', num(c.planned), true, m.smart && (c.locked || st.income === 0))}
           <span class="num muted spent">${num(spent)}</span><span class="num ${left < 0 ? 'neg' : ''}">${num(left)}</span>
           <button type="button" class="del" data-act="del-cat" data-id="${c.id}" aria-label="Xoá ${esc(c.name)}">×</button></div>
-          <div class="bar ${barCls}" title="${Math.round(ratio * 100)}% ngân sách"><i style="width:${Math.min(100, ratio * 100)}%"></i>
-          ${ti.when === 'now' ? `<span class="pace" style="left:${ti.elapsed * 100}%" title="Hôm nay"></span>` : ''}</div></div>`;
+          <div class="smart-line"><div class="bar ${barCls}" title="${Math.round(ratio * 100)}% ngân sách"><i style="width:${Math.min(100, ratio * 100)}%"></i>
+          ${ti.when === 'now' ? `<span class="pace" style="left:${ti.elapsed * 100}%" title="Hôm nay"></span>` : ''}</div>
+          ${m.smart ? `<span class="pct">${cell('cat', c.id, 'pct', pf.format(c.pct || 0), true, c.locked)}%</span>
+            <label class="lock"><input type="checkbox" data-lock="${c.id}" data-fid="cat:${c.id}:lock"${c.locked ? ' checked' : ''}> Cố định</label>` : ''}</div></div>`;
       }
       h += `<button type="button" class="add" data-act="add-cat" data-group="${g}">+ Thêm hạng mục</button></div>`;
     }
@@ -182,10 +206,10 @@
     $('plan').innerHTML = h;
   }
 
-  function cell(kind, id, field, value, isNum) {
-    return `<input class="cell${isNum ? ' num' : ''}" type="text" ${isNum ? 'inputmode="decimal"' : 'maxlength="40"'}
+  function cell(kind, id, field, value, isNum, disabled) {
+    return `<input class="cell${isNum ? ' num' : ''}" type="text" ${isNum ? 'inputmode="decimal"' : 'maxlength="40"'}${disabled ? ' disabled' : ''}
       data-kind="${kind}" data-id="${id}" data-field="${field}" data-fid="${kind}:${id}:${field}" value="${esc(value)}"
-      aria-label="${field === 'name' ? 'Tên' : 'Số tiền'}">`;
+      aria-label="${field === 'name' ? 'Tên' : field === 'pct' ? 'Phần trăm thu nhập' : 'Số tiền'}">`;
   }
 
   function catOptions(m, selected, first) {
@@ -238,13 +262,14 @@
 
   // Lưu rồi vẽ lại; giữ con trỏ ở ô đang gõ (Tab sang ô kế tiếp không bị mất focus)
   function commit(focusFid) {
+    applySmart(cur());
     save();
     setTimeout(() => {
       const fid = focusFid || document.activeElement?.dataset?.fid;
       render();
       if (fid) {
         const el = document.querySelector(`[data-fid="${fid}"]`);
-        if (el) { el.focus(); el.select(); }
+        if (el && !el.disabled) { el.focus(); el.select(); }
       }
     });
   }
@@ -293,6 +318,7 @@
       const m = cur();
       m.incomes = src.incomes.map((i) => ({ ...i, id: uid() }));
       m.categories = src.categories.map((c) => ({ ...c, id: uid() }));
+      m.smart = src.smart;
       commit();
     },
     export() {
@@ -315,15 +341,29 @@
     const el = e.target;
     if (el.id === 'tx-filter') { filter = el.value; renderTx(cur()); return; }
     if (el.id === 'import-file') return importFile(el);
-    if (!el.dataset.field) return;
     const m = cur();
+    if (el.id === 'smart-toggle') {
+      if (el.checked) enableSmart(m); else m.smart = false;
+      return commit();
+    }
+    if (el.dataset.lock) {
+      m.categories.find((c) => c.id === el.dataset.lock).locked = el.checked;
+      return commit();
+    }
+    if (!el.dataset.field) return;
     const item = (el.dataset.kind === 'inc' ? m.incomes : m.categories).find((x) => x.id === el.dataset.id);
     if (!item) return;
     if (el.dataset.field === 'name') {
       item.name = el.value.trim() || item.name;
+    } else if (el.dataset.field === 'pct') {
+      const v = parseFloat(el.value.replace('%', '').replace(',', '.'));
+      if (v >= 0) item.pct = Math.min(100, v);
     } else {
       const v = parseMoney(el.value || '0');
-      if (!isNaN(v)) item[el.dataset.field] = v;
+      const income = sum(m.incomes, 'amount');
+      if (isNaN(v)) { /* giữ giá trị cũ */ }
+      else if (m.smart && el.dataset.kind === 'cat') item.pct = (v / income) * 100; // sửa số tiền → quy ngược ra %
+      else item[el.dataset.field] = v;
     }
     commit();
   });

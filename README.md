@@ -14,6 +14,7 @@ Rồi mở http://localhost:5173 (hoặc mở thẳng `index.html`).
 
 1. **Thu nhập** — nhập các nguồn thu dự kiến của tháng.
 2. **Kế hoạch** — chia thu nhập vào các hạng mục thuộc 3 nhóm *Thiết yếu / Mong muốn / Tiết kiệm* (gợi ý 50/30/20) cho tới khi "Chưa phân bổ" về 0.
+   - Bật **Chi tiêu thông minh** để app tự chia thu nhập theo % cho từng hạng mục; đổi thu nhập thì ngân sách tự tính lại. Tích **Cố định** để khoá % của một hạng mục, bỏ tích để sửa % (hoặc sửa thẳng số tiền).
 3. **Nhật ký chi tiêu** — ghi từng khoản chi. Gõ tắt được: `50k`, `1.5tr`, `2ty`.
 4. Sang tháng mới, bấm **Chép từ tháng trước** để dùng lại kế hoạch.
 
