@@ -29,6 +29,7 @@
   const num = (n) => nf.format(Math.round(n));
   const money = (n) => `${num(n)} ₫`;
   const pf = new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 1 });
+  const compact = (n) => (n >= 1e6 ? `${pf.format(n / 1e6)}tr` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : n ? String(n) : '–');
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
   // "50k" → 50.000, "1.5tr" / "1,5tr" → 1.500.000, "1.200.000" → 1.200.000
@@ -49,6 +50,7 @@
   let state = load();
   let filter = '';
   let recOpen = false;
+  let reportSel = null; // tháng đang chọn trên biểu đồ báo cáo
   let editing = null; // id khoản chi đang sửa trong form
 
   function load() {
@@ -190,6 +192,98 @@
     $('recurring').innerHTML = h;
   }
 
+  // Báo cáo: 6 tháng gần nhất có dữ liệu. Hạng mục được ghép giữa các tháng theo tên.
+  function renderReport() {
+    const head = `<header class="page-head"><h2>Báo cáo</h2><span class="page-note">6 tháng gần nhất có dữ liệu</span></header>`;
+    const keys = Object.keys(state.months).filter((k) => {
+      const s = stats(state.months[k]);
+      return s.spent > 0 || s.planned > 0;
+    }).sort().slice(-6);
+    if (!keys.length) {
+      $('report').innerHTML = `${head}<div class="empty">Chưa có gì để báo cáo — lập kế hoạch hoặc ghi vài khoản chi trước đã.</div>`;
+      return;
+    }
+    const rows = keys.map((key) => ({ key, m: state.months[key], ...stats(state.months[key]) }));
+    if (!keys.includes(reportSel)) reportSel = keys.includes(state.view) ? state.view : keys.at(-1);
+    const isOver = (spent, planned) => spent > 0 && spent > planned;
+
+    // Số liệu chung: chỉ tính các tháng đã kết thúc (tháng đang chạy làm lệch trung bình), trừ khi chưa có tháng nào xong.
+    // Tiền chuyển vào nhóm Tiết kiệm được tính là để dành, không phải tiêu.
+    const nowKey = keyOf(new Date());
+    const closed = rows.filter((r) => r.key < nowKey);
+    const base = closed.length ? closed : rows;
+    const span = closed.length ? `${closed.length} tháng đã xong` : 'tháng này';
+    for (const r of base) {
+      const saveIds = new Set(r.m.categories.filter((c) => c.group === 'save').map((c) => c.id));
+      r.consumed = sum(r.m.transactions.filter((t) => !saveIds.has(t.catId)), 'amount');
+    }
+    const withIncome = base.filter((r) => r.income > 0);
+    const incomeSum = sum(withIncome, 'income');
+    const saveRate = incomeSum ? Math.round(((incomeSum - sum(withIncome, 'consumed')) / incomeSum) * 100) : null;
+
+    // Theo hạng mục
+    const cats = new Map();
+    for (const r of rows) {
+      const add = (name, spent, planned) => {
+        const c = cats.get(name) || { name, total: 0, cells: {} };
+        const cell = (c.cells[r.key] ||= { spent: 0, planned: 0 });
+        cell.spent += spent; cell.planned += planned; c.total += spent;
+        cats.set(name, c);
+      };
+      for (const c of r.m.categories) add(c.name, r.spentBy[c.id] || 0, c.planned);
+      if (r.spentBy['']) add('Chưa phân loại', r.spentBy[''], Infinity);
+    }
+    const catRows = [...cats.values()].filter((c) => c.total > 0).sort((a, b) => b.total - a.total);
+    for (const c of catRows) c.over = keys.filter((k) => c.cells[k] && isOver(c.cells[k].spent, c.cells[k].planned)).length;
+    const worst = catRows.reduce((a, b) => (b.over > (a?.over || 0) ? b : a), null);
+
+    const tile = (label, val, sub) => `<div class="stat"><div class="stat-label">${label}</div><div class="stat-val">${val}</div><div class="stat-sub">${sub}</div></div>`;
+    let h = `${head}<div class="rep-tiles">` +
+      tile('Chi trung bình', money(sum(base, 'spent') / base.length), `mỗi tháng · ${span}`) +
+      tile('Để dành được', saveRate === null ? '—' : `${saveRate}%`, saveRate === null ? 'chưa nhập thu nhập' : `thu nhập · gồm cả tiền tiết kiệm · ${span}`) +
+      tile('Hay vượt nhất', worst ? esc(worst.name) : 'Chưa mục nào', worst ? `vượt ${worst.over}/${rows.length} tháng` : 'mọi hạng mục đều trong kế hoạch') +
+      `</div>`;
+
+    // Biểu đồ: cột = đã chi, vạch ngang = kế hoạch
+    const max = Math.max(...rows.map((r) => Math.max(r.spent, r.planned))) || 1;
+    const peak = rows.reduce((a, b) => (b.spent > a.spent ? b : a));
+    h += `<div class="legend"><span><i class="sw" style="background:var(--ink)"></i>Đã chi</span><span><i class="sw-line"></i>Kế hoạch</span>
+      <span><i class="sw" style="background:var(--red)"></i>▲ Vượt kế hoạch</span></div><div class="chart">`;
+    for (const r of rows) {
+      const over = isOver(r.spent, r.planned);
+      const hPct = (r.spent / max) * 100;
+      const label = (over ? '▲ ' : '') + (r.key === reportSel || r === peak ? compact(r.spent) : '');
+      h += `<button type="button" class="col${r.key === reportSel ? ' is-sel' : ''}${over ? ' is-over' : ''}" data-act="rep-sel" data-key="${r.key}"
+        title="${monthName(r.key)}: đã chi ${money(r.spent)} / kế hoạch ${money(r.planned)}">
+        <span class="col-plot"><span class="col-val" style="bottom:${hPct}%">${label}</span><i class="col-bar" style="height:${hPct}%"></i>
+        ${r.planned > 0 ? `<b class="col-plan" style="bottom:${(r.planned / max) * 100}%"></b>` : ''}</span>
+        <span class="col-name">T${+r.key.slice(5)}<small>${r.key.slice(2, 4)}</small></span></button>`;
+    }
+    const s = rows.find((r) => r.key === reportSel);
+    const diff = s.planned - s.spent;
+    h += `</div><p class="rep-detail"><b>${monthName(s.key)}</b> — đã chi <b class="num">${money(s.spent)}</b> / kế hoạch <b class="num">${money(s.planned)}</b>
+      · ${diff < 0 ? `<span class="neg">vượt ${money(-diff)}</span>` : `còn ${money(diff)}`}
+      ${s.key !== state.view ? `<button type="button" class="link" data-act="goto" data-key="${s.key}">Mở tháng này</button>` : ''}</p>`;
+
+    // Bảng hạng mục × tháng (cũng là dạng bảng của biểu đồ)
+    if (catRows.length) {
+      h += `<div class="table-wrap"><table class="rep-table"><thead><tr><th>Đã chi theo hạng mục</th>` +
+        keys.map((k) => `<th>T${+k.slice(5)}/${k.slice(2, 4)}</th>`).join('') + `<th>Số tháng vượt</th></tr></thead><tbody>`;
+      for (const c of catRows) {
+        h += `<tr><th>${esc(c.name)}</th>` + keys.map((k) => {
+          const cell = c.cells[k];
+          if (!cell) return '<td class="muted">–</td>';
+          return isOver(cell.spent, cell.planned)
+            ? `<td class="neg" title="Kế hoạch ${money(cell.planned)}">▲ ${compact(cell.spent)}</td>` : `<td>${compact(cell.spent)}</td>`;
+        }).join('') + `<td class="${c.over ? 'neg' : 'muted'}">${c.over}/${keys.length}</td></tr>`;
+      }
+      h += `</tbody><tfoot><tr><th>Tổng đã chi</th>` + rows.map((r) => `<td>${compact(r.spent)}</td>`).join('') + `<td></td></tr>
+        <tr><th>Kế hoạch</th>` + rows.map((r) => `<td>${compact(r.planned)}</td>`).join('') + `<td></td></tr></tfoot></table></div>
+        <p class="rec-hint">▲ = chi nhiều hơn kế hoạch của hạng mục trong tháng đó. Đơn vị: k = nghìn, tr = triệu đồng.</p>`;
+    }
+    $('report').innerHTML = h;
+  }
+
   function render() {
     applyRecurring();
     renderRecurring();
@@ -202,6 +296,7 @@
     renderPlan(m, st, ti);
     renderCatOptions(m);
     renderTx(m);
+    renderReport();
   }
 
   function renderHead() {
@@ -397,6 +492,13 @@
     prev() { setEditing(null); shiftMonth(-1); commit(null, true); },
     next() { setEditing(null); shiftMonth(1); commit(null, true); },
     today() { setEditing(null); state.view = keyOf(new Date()); commit(null, true); },
+    'rep-sel'(el) { reportSel = el.dataset.key; renderReport(); },
+    goto(el) {
+      setEditing(null);
+      state.view = el.dataset.key;
+      commit(null, true);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    },
     snooze() { state.snoozeUntil = Date.now() + SNOOZE; save(); renderBackup(); },
     'edit-tx'(el) {
       setEditing(cur().transactions.find((t) => t.id === el.dataset.id));

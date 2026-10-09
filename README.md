@@ -21,6 +21,8 @@ Rồi mở http://localhost:5173 (hoặc mở thẳng `index.html`).
 
 Thanh tiến độ của mỗi hạng mục có vạch đánh dấu "hôm nay": thanh chạy vượt vạch nghĩa là đang tiêu nhanh hơn tiến độ tháng.
 
+**Báo cáo** ở cuối trang so sánh 6 tháng gần nhất: biểu đồ đã chi so với kế hoạch, bảng chi theo hạng mục từng tháng (▲ = vượt kế hoạch), mức chi trung bình, tỉ lệ để dành và hạng mục hay vượt nhất.
+
 **Sao lưu / Khôi phục** ở cuối trang dùng để giữ một bản dữ liệu ngoài trình duyệt hoặc chuyển sang máy khác (tệp JSON; trên điện thoại sẽ mở bảng chia sẻ để lưu vào Tệp/Drive). App tự nhắc khi có thay đổi mà chưa sao lưu: sau 3 ngày nếu chưa sao lưu lần nào, sau đó mỗi 14 ngày.
 
 ## Cấu trúc
