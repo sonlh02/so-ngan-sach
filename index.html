@@ -4,76 +4,117 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
   <title>Sổ ngân sách tháng</title>
-  <meta name="theme-color" content="#231e1a">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f4efe4" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#111113" media="(prefers-color-scheme: dark)">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="Sổ ngân sách">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600&family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,400;1,9..144,600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <div class="desk">
-    <header class="mast">
-      <div class="brand">
-        <span class="brand-kicker">Sổ tay cá nhân</span>
-        <h1>Sổ ngân sách</h1>
-      </div>
-      <nav class="month-nav" aria-label="Chọn tháng">
-        <button type="button" class="nav-btn" data-act="prev" aria-label="Tháng trước">‹</button>
-        <div class="month-label" id="month-label"></div>
-        <button type="button" class="nav-btn" data-act="next" aria-label="Tháng sau">›</button>
-        <button type="button" class="today-btn" data-act="today">Tháng này</button>
-      </nav>
-    </header>
+  <div class="app">
 
-    <div class="backup-note" id="backup-note" role="status" hidden></div>
+    <!-- ============ Nhập vào ============ -->
+    <section class="tab" data-tab="entry">
+      <header class="topbar">
+        <div class="seg" role="tablist" aria-label="Loại khoản">
+          <button type="button" role="tab" data-act="mode" data-mode="exp">Tiền chi</button>
+          <button type="button" role="tab" data-act="mode" data-mode="inc">Tiền thu</button>
+        </div>
+      </header>
+      <div class="backup-slot"></div>
+      <form id="entry" class="sheet" autocomplete="off" novalidate>
+        <div class="field">
+          <span class="field-label">Ngày</span>
+          <button type="button" class="step" data-act="day" data-d="-1" aria-label="Ngày trước">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+          <label class="date-pill"><span id="date-text"></span><input type="date" id="f-date" aria-label="Chọn ngày"></label>
+          <button type="button" class="step" data-act="day" data-d="1" aria-label="Ngày sau">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+        </div>
+        <label class="field">
+          <span class="field-label">Ghi chú</span>
+          <input type="text" id="f-note" class="plain" maxlength="80" placeholder="Chưa nhập vào">
+        </label>
+        <label class="field">
+          <span class="field-label" id="amt-label">Tiền chi</span>
+          <input type="text" id="f-amount" class="amount" inputmode="decimal" placeholder="0" aria-describedby="amt-hint">
+          <span class="unit">đ</span>
+        </label>
+        <p class="tiny" id="amt-hint">Gõ nhanh: 50k = 50.000 · 1.5tr = 1.500.000</p>
 
-    <section class="summary" id="summary" aria-label="Tổng quan"></section>
+        <div class="grid-title">Danh mục</div>
+        <div id="f-cats" class="cat-grid"></div>
+        <label class="check-row" id="repeat-row"><input type="checkbox" id="f-repeat"> Lặp lại hằng tháng</label>
+        <div id="f-extra"></div>
 
-    <main class="book">
-      <section class="page page-plan">
-        <header class="page-head">
-          <h2>Kế hoạch</h2>
-          <span class="page-note">Chia thu nhập vào từng hạng mục trước khi tiêu</span>
-        </header>
-        <div id="plan"></div>
-      </section>
+        <div class="submit-area">
+          <button type="submit" class="pill" id="f-submit">Nhập khoản chi</button>
+          <div class="edit-actions" id="edit-actions" hidden>
+            <button type="button" class="link" data-act="cancel-edit">Huỷ sửa</button>
+            <button type="button" class="link danger" data-act="delete-entry">Xoá khoản này</button>
+          </div>
+        </div>
+      </form>
+    </section>
 
-      <section class="page page-log">
-        <header class="page-head">
-          <h2>Nhật ký chi tiêu</h2>
-          <span class="page-note">Gõ nhanh: 50k, 1.5tr · chạm một khoản để sửa</span>
-        </header>
-        <form id="tx-form" class="tx-form" autocomplete="off">
-          <label class="f f-date"><span>Ngày</span><input type="date" id="tx-date" required></label>
-          <label class="f f-amt"><span>Số tiền</span><input type="text" id="tx-amount" inputmode="decimal" placeholder="0" required></label>
-          <label class="f f-cat"><span>Hạng mục</span><select id="tx-cat"></select></label>
-          <label class="f f-note"><span>Ghi chú</span><input type="text" id="tx-note" maxlength="80" placeholder="Mua gì, ở đâu…"></label>
-          <button type="submit" class="ink-btn" id="tx-submit">Ghi sổ</button>
-          <label class="repeat"><input type="checkbox" id="tx-repeat"> Lặp lại hằng tháng</label>
-          <button type="button" class="link" id="tx-cancel" data-act="cancel-edit" hidden>Huỷ sửa</button>
-        </form>
-        <div id="recurring"></div>
-        <div id="txlist"></div>
-      </section>
-    </main>
+    <!-- ============ Lịch ============ -->
+    <section class="tab" data-tab="calendar" hidden>
+      <header class="topbar month-bar">
+        <button type="button" class="step" data-act="prev" aria-label="Tháng trước"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <h1 class="month-title" id="cal-title"></h1>
+        <button type="button" class="step" data-act="next" aria-label="Tháng sau"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+      </header>
+      <div id="cal"></div>
+    </section>
 
-    <section class="report" id="report" aria-label="Báo cáo"></section>
+    <!-- ============ Báo cáo ============ -->
+    <section class="tab" data-tab="report" hidden>
+      <header class="topbar"><h1 class="month-title">Báo cáo</h1></header>
+      <div id="report"></div>
+    </section>
 
-    <footer class="foot">
-      <span>Dữ liệu được lưu trên trình duyệt của máy này. <span id="backup-status"></span></span>
-      <span class="foot-actions">
-        <button type="button" data-act="export">Sao lưu</button>
-        <button type="button" data-act="import">Khôi phục</button>
-        <input type="file" id="import-file" accept="application/json,text/plain,.json,.txt" hidden>
-      </span>
-    </footer>
+    <!-- ============ Ngân sách ============ -->
+    <section class="tab" data-tab="budget" hidden>
+      <header class="topbar month-bar">
+        <button type="button" class="step" data-act="prev" aria-label="Tháng trước"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <h1 class="month-title" id="bud-title"></h1>
+        <button type="button" class="step" data-act="next" aria-label="Tháng sau"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+      </header>
+      <div class="summary" id="summary"></div>
+      <div id="plan"></div>
+    </section>
+
+    <!-- ============ Khác ============ -->
+    <section class="tab" data-tab="more" hidden>
+      <header class="topbar"><h1 class="month-title">Khác</h1></header>
+      <div class="backup-slot"></div>
+      <div id="more"></div>
+      <input type="file" id="import-file" accept="application/json,text/plain,.json,.txt" hidden>
+    </section>
+
+    <nav class="tabbar" aria-label="Điều hướng">
+      <button type="button" data-act="tab" data-tab="entry">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l1.2-4.2L16.5 4.5l3 3L8.2 18.8zM14.5 6.5l3 3"/></svg><span>Nhập vào</span></button>
+      <button type="button" data-act="tab" data-tab="calendar">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4M7.5 13.5h1M11.5 13.5h1M15.5 13.5h1M7.5 17h1M11.5 17h1"/></svg><span>Lịch</span></button>
+      <button type="button" data-act="tab" data-tab="report">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5a8.5 8.5 0 1 0 8.5 8.5H12z"/><path d="M15 3.8A8.5 8.5 0 0 1 20.2 9H15z"/></svg><span>Báo cáo</span></button>
+      <button type="button" data-act="tab" data-tab="budget">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 7V5a1 1 0 0 0-1-1H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h13a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1H6a2 2 0 0 1-2-2"/><circle cx="16" cy="13.5" r="1"/></svg><span>Ngân sách</span></button>
+      <button type="button" data-act="tab" data-tab="more">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></svg><span>Khác</span></button>
+    </nav>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
   </div>
   <script src="app.js"></script>
   <script>
